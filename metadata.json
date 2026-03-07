@@ -1,0 +1,7 @@
+{
+  "name": "Voice to Notes",
+  "description": "A sleek, real-time AI translator with glass-morphic design and intelligent notes gallery.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "name": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "email", "name"]
+    },
+    "Note": {
+      "title": "Note",
+      "description": "A translation note",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "originalText": { "type": "string" },
+        "translatedText": { "type": "string" },
+        "sourceLang": { "type": "string" },
+        "targetLang": { "type": "string" },
+        "category": { "type": "string" },
+        "timestamp": { "type": "integer" }
+      },
+      "required": ["id", "userId", "originalText", "translatedText", "sourceLang", "targetLang", "category", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile documents"
+    },
+    "/notes/{noteId}": {
+      "schema": "Note",
+      "description": "Translation notes collection"
+    }
+  }
+}

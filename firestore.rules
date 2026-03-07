@@ -1,0 +1,90 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: userId (matches auth.uid)
+    // Fields:
+    //   - id: string (required)
+    //   - email: string (required)
+    //   - name: string (required)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: notes
+    // Document ID: noteId
+    // Fields:
+    //   - id: string (required)
+    //   - userId: string (required)
+    //   - originalText: string (required)
+    //   - translatedText: string (required)
+    //   - sourceLang: string (required)
+    //   - targetLang: string (required)
+    //   - category: string (required)
+    //   - timestamp: number (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasOnly(['id', 'email', 'name', 'createdAt']) &&
+             data.id == request.auth.uid &&
+             data.email is string && isValidEmail(data.email) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidNote(data) {
+      return data.keys().hasOnly(['id', 'userId', 'originalText', 'translatedText', 'sourceLang', 'targetLang', 'category', 'timestamp']) &&
+             data.id is string &&
+             data.userId == request.auth.uid &&
+             data.originalText is string && data.originalText.size() < 5000 &&
+             data.translatedText is string && data.translatedText.size() < 5000 &&
+             data.sourceLang is string &&
+             data.targetLang is string &&
+             data.category is string &&
+             data.timestamp is number;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) && 
+                      request.resource.data.id == resource.data.id &&
+                      request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    match /notes/{noteId} {
+      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && isValidNote(request.resource.data);
+      allow update: if isDocOwner() && isValidNote(request.resource.data) &&
+                      request.resource.data.userId == resource.data.userId;
+      allow delete: if isDocOwner();
+    }
+  }
+}

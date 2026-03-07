@@ -1,0 +1,12 @@
+google-services.json
+.env*
+!.env.example
+.gradle_local/
+.vscode/
+.idea/
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
