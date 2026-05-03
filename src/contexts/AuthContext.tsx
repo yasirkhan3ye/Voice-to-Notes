@@ -16,9 +16,6 @@ import {
   ConfirmationResult
 } from '../firebase';
 import { serverTimestamp } from 'firebase/firestore';
-import { signInWithCredential, GoogleAuthProvider } from 'firebase/auth';
-import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
-import { Capacitor } from '@capacitor/core';
 
 interface User {
   id: string;
@@ -48,30 +45,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       try {
         if (firebaseUser) {
-          // Check if user exists in Firestore, if not create
-          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-          if (!userDoc.exists()) {
-            const newUser = {
+          try {
+            // Check if user exists in Firestore, if not create
+            const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+            if (!userDoc.exists()) {
+              const newUser = {
+                id: firebaseUser.uid,
+                email: firebaseUser.email || '',
+                name: firebaseUser.displayName || 'User',
+                phoneNumber: firebaseUser.phoneNumber || '',
+                createdAt: serverTimestamp()
+              };
+              await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
+              setUser({
+                id: newUser.id,
+                email: newUser.email,
+                name: newUser.name,
+                phoneNumber: newUser.phoneNumber
+              });
+            } else {
+              const userData = userDoc.data() as any;
+              setUser({
+                id: userData.id,
+                email: userData.email,
+                name: userData.name,
+                phoneNumber: userData.phoneNumber
+              });
+            }
+          } catch (firestoreError: any) {
+            console.warn("Firestore error during auth init (possibly offline):", firestoreError);
+            // Fallback to basic user info if offline
+            setUser({
               id: firebaseUser.uid,
               email: firebaseUser.email || '',
               name: firebaseUser.displayName || 'User',
-              phoneNumber: firebaseUser.phoneNumber || '',
-              createdAt: serverTimestamp()
-            };
-            await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
-            setUser({
-              id: newUser.id,
-              email: newUser.email,
-              name: newUser.name,
-              phoneNumber: newUser.phoneNumber
-            });
-          } else {
-            const userData = userDoc.data() as any;
-            setUser({
-              id: userData.id,
-              email: userData.email,
-              name: userData.name,
-              phoneNumber: userData.phoneNumber
+              phoneNumber: firebaseUser.phoneNumber || ''
             });
           }
         } else {
@@ -112,25 +120,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
-    if (Capacitor.isNativePlatform()) {
-      await FirebaseAuthentication.signOut();
-    }
     await signOut(auth);
   };
 
   const loginWithGoogle = async () => {
     try {
-      if (Capacitor.isNativePlatform()) {
-        const result = await FirebaseAuthentication.signInWithGoogle();
-        if (result.credential?.idToken) {
-          const credential = GoogleAuthProvider.credential(result.credential.idToken);
-          await signInWithCredential(auth, credential);
-        } else {
-          throw new Error('Google Login failed: No idToken received from native layer.');
-        }
-      } else {
-        await signInWithPopup(auth, googleProvider);
-      }
+      await signInWithPopup(auth, googleProvider);
     } catch (error: any) {
       console.error("Google Login Error:", error);
       if (error.message.includes('deleted_client')) {

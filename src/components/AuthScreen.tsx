@@ -96,8 +96,8 @@ export const AuthScreen: React.FC = () => {
           </p>
         </div>
 
-        <div className="glass p-5 rounded-[20px] border border-white/10 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.5)] backdrop-blur-3xl relative overflow-hidden">
-          <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent" />
+        <div className="p-8 rounded-[32px] bg-gradient-to-br from-white/10 to-white/5 border border-white/20 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.8),inset_0_1px_1px_rgba(255,255,255,0.2)] backdrop-blur-[64px] relative overflow-hidden">
+          <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/50 to-transparent" />
           
           <div className="flex items-center justify-center gap-6 mb-5">
             <button 
@@ -116,16 +116,16 @@ export const AuthScreen: React.FC = () => {
             </button>
           </div>
 
-          <div className="flex bg-white/5 p-1 rounded-xl mb-5">
+          <div className="flex bg-black/20 p-1.5 rounded-2xl mb-8 border border-white/5 backdrop-blur-md shadow-inner">
             <button 
               onClick={() => { setAuthMethod('email'); resetPhoneAuth(); }}
-              className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${authMethod === 'email' ? 'bg-primary text-white' : 'text-slate-500'}`}
+              className={`flex-1 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all ${authMethod === 'email' ? 'bg-white/20 text-white shadow-[0_4px_12px_rgba(0,0,0,0.1)] border border-white/10' : 'text-slate-400 hover:text-white'}`}
             >
               Email
             </button>
             <button 
               onClick={() => { setAuthMethod('phone'); resetPhoneAuth(); }}
-              className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${authMethod === 'phone' ? 'bg-primary text-white' : 'text-slate-500'}`}
+              className={`flex-1 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all ${authMethod === 'phone' ? 'bg-white/20 text-white shadow-[0_4px_12px_rgba(0,0,0,0.1)] border border-white/10' : 'text-slate-400 hover:text-white'}`}
             >
               Phone
             </button>
@@ -149,7 +149,7 @@ export const AuthScreen: React.FC = () => {
                         placeholder="Full Name"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        className="w-full bg-white/5 border border-white/5 pl-11 pr-4 py-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30 text-sm transition-all placeholder:text-slate-600"
+                        className="w-full bg-black/20 border border-white/10 pl-11 pr-4 py-3 rounded-xl focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/30 text-sm transition-all placeholder:text-slate-500 backdrop-blur-xl shadow-inner font-medium"
                         required
                       />
                     </div>
@@ -161,7 +161,7 @@ export const AuthScreen: React.FC = () => {
                       placeholder="Email Address"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="w-full bg-white/5 border border-white/5 pl-11 pr-4 py-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30 text-sm transition-all placeholder:text-slate-600"
+                      className="w-full bg-black/20 border border-white/10 pl-11 pr-4 py-3 rounded-xl focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/30 text-sm transition-all placeholder:text-slate-500 backdrop-blur-xl shadow-inner font-medium"
                       required
                     />
                   </div>
@@ -172,7 +172,7 @@ export const AuthScreen: React.FC = () => {
                       placeholder="Password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full bg-white/5 border border-white/5 pl-11 pr-4 py-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30 text-sm transition-all placeholder:text-slate-600"
+                      className="w-full bg-black/20 border border-white/10 pl-11 pr-4 py-3 rounded-xl focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/30 text-sm transition-all placeholder:text-slate-500 backdrop-blur-xl shadow-inner font-medium"
                       required
                     />
                   </div>
@@ -193,7 +193,7 @@ export const AuthScreen: React.FC = () => {
                         placeholder="+1 234 567 890"
                         value={phoneNumber}
                         onChange={(e) => setPhoneNumber(e.target.value)}
-                        className="w-full bg-white/5 border border-white/5 pl-11 pr-4 py-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30 text-sm transition-all placeholder:text-slate-600"
+                        className="w-full bg-black/20 border border-white/10 pl-11 pr-4 py-3 rounded-xl focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/30 text-sm transition-all placeholder:text-slate-500 backdrop-blur-xl shadow-inner font-medium"
                         required
                       />
                     </div>
@@ -205,7 +205,7 @@ export const AuthScreen: React.FC = () => {
                         placeholder="Verification Code"
                         value={verificationCode}
                         onChange={(e) => setVerificationCode(e.target.value)}
-                        className="w-full bg-white/5 border border-white/5 pl-11 pr-4 py-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30 text-sm transition-all placeholder:text-slate-600"
+                        className="w-full bg-black/20 border border-white/10 pl-11 pr-4 py-3 rounded-xl focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/30 text-sm transition-all placeholder:text-slate-500 backdrop-blur-xl shadow-inner font-medium"
                         required
                       />
                     </div>
@@ -228,7 +228,7 @@ export const AuthScreen: React.FC = () => {
             <button 
               type="submit"
               disabled={isSubmitting}
-              className="w-full bg-primary text-white py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-primary/90 active:scale-[0.98] transition-all shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full bg-gradient-to-r from-primary to-blue-600 text-white mt-4 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.98] transition-all shadow-[0_8px_24px_rgba(59,130,246,0.3)] disabled:opacity-50 disabled:cursor-not-allowed border border-white/10"
             >
               {isSubmitting ? (
                 <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -259,7 +259,7 @@ export const AuthScreen: React.FC = () => {
 
           <button 
             onClick={loginWithGoogle}
-            className="w-full mt-5 bg-white text-black py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-3 hover:bg-slate-100 active:scale-[0.98] transition-all shadow-[0_0_20px_rgba(255,255,255,0.1)]"
+            className="w-full mt-6 bg-white/10 text-white py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-3 hover:bg-white/20 active:scale-[0.98] transition-all shadow-[0_4px_20px_rgba(0,0,0,0.2)] border border-white/10 backdrop-blur-md"
           >
             <svg className="size-4" viewBox="0 0 24 24">
               <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />

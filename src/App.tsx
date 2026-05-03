@@ -55,12 +55,11 @@ import {
   query, 
   where 
 } from './firebase';
-import { translateText } from './services/geminiService';
+import { translateText, transcribeAndTranslateAudio } from './services/geminiService';
 import { TranslationNote, SUPPORTED_LANGUAGES, CATEGORY_COLORS, Category, DEFAULT_CATEGORIES } from './types';
 import { useAuth } from './contexts/AuthContext';
 import { AuthScreen } from './components/AuthScreen';
 import { Tag, X } from 'lucide-react';
-import { Capacitor } from '@capacitor/core';
 
 const HeartbeatVisualizer = ({ isListening, isDarkMode }: { isListening: boolean; isDarkMode: boolean }) => {
   return (
@@ -116,8 +115,21 @@ export default function App() {
   const [selectingLangType, setSelectingLangType] = useState<'source' | 'target'>('source');
   const [recentLangs, setRecentLangs] = useState<string[]>(['English', 'Spanish', 'French']);
   const [showSavePrompt, setShowSavePrompt] = useState(false);
+  const [showSavedToast, setShowSavedToast] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(true);
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // Theme Effect
   useEffect(() => {
@@ -135,37 +147,10 @@ export default function App() {
   const [customCategories, setCustomCategories] = useState<{id: string, name: string}[]>([]);
   const [isCreateCategoryModalOpen, setIsCreateCategoryModalOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const recognitionRef = useRef<any>(null);
-
-  // Initialize Speech Recognition
-  useEffect(() => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-
-      recognition.onresult = (event: any) => {
-        let currentTranscript = '';
-        for (let i = 0; i < event.results.length; i++) {
-          currentTranscript += event.results[i][0].transcript;
-        }
-        setTranscript(currentTranscript);
-      };
-
-      recognition.onerror = (event: any) => {
-        console.error('Speech recognition error:', event.error);
-        setIsListening(false);
-      };
-
-      recognition.onend = () => {
-        setIsListening(false);
-      };
-
-      recognitionRef.current = recognition;
-    }
-  }, []);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<BlobPart[]>([]);
 
   const speak = (text: string, langName: string) => {
     if (!isVoiceEnabled) return;
@@ -249,66 +234,127 @@ export default function App() {
     setIsLangModalOpen(false);
   };
 
-  // Real speech recognition logic
-  const handleMicClick = async () => {
-    // Check and request microphone permission on Android
-    if (Capacitor.isNativePlatform()) {
-      try {
-        const { recordAudio } = await (window as any).Capacitor.Plugins.Permissions.checkPermissions({ permissions: ['recordAudio'] });
-        if (recordAudio !== 'granted') {
-          const { recordAudio: newStatus } = await (window as any).Capacitor.Plugins.Permissions.requestPermissions({ permissions: ['recordAudio'] });
-          if (newStatus !== 'granted') {
-            alert('Microphone permission is required for voice recording.');
-            return;
+  const startRecording = async () => {
+    if (isOffline) {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        setIsListening(true);
+        const recognition = new SpeechRecognition();
+        recognition.lang = SUPPORTED_LANGUAGES.find(l => l.name === sourceLang)?.code || 'en-US';
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 1;
+
+        recognition.onresult = async (event: any) => {
+          setIsListening(false);
+          setIsProcessing(true);
+          const transcript = event.results[0][0].transcript;
+          setTranscript(transcript);
+          
+          try {
+            // Explore on-device translation if available (Chrome Translation API)
+            if ('translation' in window && 'createTranslator' in (window as any).translation) {
+              const translator = await (window as any).translation.createTranslator({
+                sourceLanguage: recognition.lang.split('-')[0],
+                targetLanguage: SUPPORTED_LANGUAGES.find(l => l.name === targetLang)?.code || 'en'
+              });
+              const translated = await translator.translate(transcript);
+              setTranslation(translated);
+              setDetectedCategory('General');
+              if (isVoiceEnabled) speak(translated, targetLang);
+            } else {
+              setTranslation('(Translation unavailable offline. Reconnect to translate.)');
+              setDetectedCategory('General');
+            }
+          } catch (e) {
+            console.error('Offline translation failed:', e);
+            setTranslation('(Translation failed offline.)');
+            setDetectedCategory('General');
+          } finally {
+            setIsProcessing(false);
           }
-        }
-      } catch (e) {
-        console.warn('Capacitor Permissions API not found, falling back to browser behavior', e);
+        };
+
+        recognition.onerror = (event: any) => {
+          setIsListening(false);
+          setIsProcessing(false);
+          alert("Offline speech recognition error: " + event.error);
+        };
+
+        recognition.start();
+        return;
+      } else {
+        alert("Offline mode requires connection or supported browser (Chrome/Android) for speech recognition.");
+        return;
       }
     }
 
-    if (isListening) {
-      recognitionRef.current?.stop();
-      setIsListening(false);
-      
-      if (transcript) {
-        try {
-          const result = await translateText(
-            transcript, 
-            targetLang, 
-            sourceLang, 
-            customCategories.map(c => c.name)
-          );
-          setTranslation(result.translatedText);
-          setDetectedCategory(result.category);
-          setSourceLang(result.detectedSourceLang);
-          
-          if (isVoiceEnabled) {
-            speak(result.translatedText, targetLang);
-          }
-        } catch (error) {
-          console.error("Translation failed", error);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
         }
-      }
-    } else {
-      if (!recognitionRef.current) {
-        alert('Speech recognition is not supported in this browser. Please try Chrome.');
-        return;
-      }
+      };
+
+      mediaRecorder.onstop = async () => {
+        setIsProcessing(true);
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        
+        const reader = new FileReader();
+        reader.readAsDataURL(audioBlob);
+        reader.onloadend = async () => {
+          const base64data = reader.result as string;
+          const base64Audio = base64data.split(',')[1];
+          
+          try {
+            const result = await transcribeAndTranslateAudio(
+              base64Audio,
+              'audio/webm',
+              targetLang,
+              sourceLang,
+              customCategories.map(c => c.name)
+            );
+            
+            setTranscript(result.originalText);
+            setTranslation(result.translatedText);
+            setDetectedCategory(result.category);
+            setSourceLang(result.detectedSourceLang);
+            
+            if (isVoiceEnabled) {
+              speak(result.translatedText, targetLang);
+            }
+          } catch (error) {
+            console.error("Audio processing failed", error);
+            alert("Translation failed. Please try again.");
+          } finally {
+            setIsProcessing(false);
+          }
+        };
+
+        // Stop all tracks
+        stream.getTracks().forEach(track => track.stop());
+      };
 
       setTranscript('');
       setTranslation('');
-      
-      const langCode = SUPPORTED_LANGUAGES.find(l => l.name === sourceLang)?.code || 'en';
-      const fullLangCode = langCode === 'ur' ? 'ur-PK' : langCode === 'it' ? 'it-IT' : langCode === 'ps' ? 'ps-AF' : 'en-US';
-      
-      recognitionRef.current.lang = fullLangCode;
-      try {
-        recognitionRef.current.start();
-        setIsListening(true);
-      } catch (e) {
-        console.error('Failed to start recognition:', e);
-      }
+      mediaRecorder.start();
+      setIsListening(true);
+    } catch (e) {
+      console.error('Failed to start recording:', e);
+      alert('Microphone access denied or not available.');
+    }
+  };
+
+  const handleMicClick = () => {
+    if (isListening) {
+      mediaRecorderRef.current?.stop();
+      setIsListening(false);
+    } else {
+      startRecording();
     }
   };
 
@@ -333,6 +379,8 @@ export default function App() {
       setTranslation('');
       setDetectedCategory('General');
       setShowSavePrompt(false);
+      setShowSavedToast(true);
+      setTimeout(() => setShowSavedToast(false), 3000);
     } catch (err) {
       console.error('Failed to save note to Firestore:', err);
     }
@@ -375,6 +423,11 @@ export default function App() {
     }
     setNewCategoryName('');
     setIsCreateCategoryModalOpen(false);
+  };
+
+  const handleDeleteCategory = (categoryId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setCustomCategories(customCategories.filter(c => c.id !== categoryId));
   };
 
   const filteredNotes = notes.filter(note => 
@@ -438,10 +491,16 @@ export default function App() {
             <span className={`text-[10px] font-bold tracking-[0.2em] uppercase opacity-90 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
               {view === 'translate' ? 'Neural Voice' : view === 'notes' ? 'History' : view === 'categories' ? 'Categories' : 'Settings'}
             </span>
-            {view === 'translate' && (
+            {view === 'translate' && !isOffline && (
               <div className="flex items-center gap-1">
                 <div className="size-1 rounded-full bg-emerald-500 animate-pulse" />
                 <span className="text-[7px] font-bold text-emerald-500 uppercase tracking-widest">Live</span>
+              </div>
+            )}
+            {isOffline && (
+              <div className="flex items-center gap-1">
+                <Cloud className="size-2 text-rose-500" />
+                <span className="text-[7px] font-bold text-rose-500 uppercase tracking-widest">Offline</span>
               </div>
             )}
           </div>
@@ -511,10 +570,13 @@ export default function App() {
                   <motion.div 
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
-                    className="glass p-4 rounded-2xl rounded-tl-none border-l-2 border-l-primary/50 max-w-[90%]"
+                    className="p-5 md:p-6 rounded-[24px] mr-auto max-w-[85%] relative border border-white/5 backdrop-blur-2xl shadow-lg bg-white/5"
                   >
-                    <p className="text-xs text-slate-400 mb-1">{sourceLang}</p>
-                    <p className="text-lg leading-relaxed font-light">{transcript}</p>
+                    <div className="flex items-center gap-2 mb-2 opacity-60">
+                      <div className="size-1 rounded-full bg-slate-400" />
+                      <p className="text-[9px] text-slate-300 font-bold uppercase tracking-[0.2em]">{sourceLang}</p>
+                    </div>
+                    <p className="text-lg leading-relaxed font-light text-slate-300 tracking-wide">{transcript}</p>
                   </motion.div>
                 )}
 
@@ -522,27 +584,35 @@ export default function App() {
                   <motion.div 
                     initial={{ opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}
-                    className="glass-primary p-4 rounded-2xl rounded-tr-none ml-auto max-w-[90%] relative group"
+                    className="p-6 md:p-8 rounded-[32px] ml-auto max-w-[95%] sm:max-w-[85%] relative group overflow-hidden border border-white/10 backdrop-blur-3xl shadow-[0_24px_64px_-12px_rgba(59,130,246,0.2)] bg-gradient-to-br from-white/5 to-transparent before:absolute before:inset-0 before:bg-gradient-to-b before:from-primary/10 before:to-transparent before:z-0"
                   >
-                    <p className="text-xs text-primary/80 mb-1 font-medium">{targetLang}</p>
-                    <p className="text-lg leading-relaxed font-medium">{translation}</p>
+                    <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent" />
+                    
+                    <div className="relative z-10">
+                      <div className="flex items-center gap-2 mb-3 opacity-80">
+                        <div className="size-1.5 rounded-full bg-primary shadow-[0_0_12px_rgba(59,130,246,0.8)]" />
+                        <p className="text-[10px] text-primary/90 font-bold uppercase tracking-[0.2em]">{targetLang}</p>
+                      </div>
+                      <p className="text-2xl md:text-3xl leading-tight font-medium text-transparent bg-clip-text bg-gradient-to-br from-white via-white/90 to-white/50 tracking-tight">{translation}</p>
+                    </div>
+
                     <button 
                       onClick={saveNote}
-                      className="absolute -bottom-2 -left-2 size-8 bg-primary rounded-full flex items-center justify-center shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="absolute bottom-4 right-4 size-10 bg-white/10 hover:bg-primary text-white rounded-full flex items-center justify-center shadow-lg backdrop-blur-md border border-white/10 opacity-0 group-hover:opacity-100 transition-all hover:scale-110 active:scale-95 z-20"
                     >
-                      <Bookmark className="size-4 text-white" />
+                      <Bookmark className="size-4" />
                     </button>
                   </motion.div>
                 )}
 
-                {isListening && !transcript && !translation && (
+                {((isListening || isProcessing) && !transcript && !translation) && (
                   <div className="flex-1 flex items-center justify-center">
                     <motion.p 
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 0.5 }}
-                      className="text-primary font-mono text-[10px] tracking-widest uppercase"
+                      className="text-primary font-mono text-[10px] tracking-widest uppercase text-center"
                     >
-                      Analyzing Audio Stream...
+                      {isProcessing ? 'Processing audio...' : 'Recording Audio...'}
                     </motion.p>
                   </div>
                 )}
@@ -582,14 +652,14 @@ export default function App() {
                 </AnimatePresence>
 
                 <div className="text-center mb-6">
-                  <p className="text-primary font-bold tracking-[0.3em] uppercase text-[9px] mb-1 opacity-80">AI Neural Processing</p>
+                  <p className="text-primary font-bold tracking-[0.3em] uppercase text-[10px] leading-[14.5px] mb-1 opacity-80">AI Neural Processing</p>
                   <h2 className={`text-2xl font-bold tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                    {isListening ? 'Listening...' : 'Start Conversation'}
+                    {isProcessing ? 'Transcribing...' : isListening ? 'Listening...' : 'Tap Mic to Start'}
                   </h2>
                 </div>
                 
                 <div className="relative flex items-center justify-center">
-                  {isListening && (
+                  {(isListening || isProcessing) && (
                     <>
                       <motion.div 
                         initial={{ scale: 0.8, opacity: 0 }}
@@ -607,15 +677,20 @@ export default function App() {
                   )}
                   <button 
                     onClick={handleMicClick}
-                    className={`relative z-20 size-20 rounded-full flex items-center justify-center transition-all active:scale-90 shadow-2xl ${
-                      isListening 
-                        ? 'bg-gradient-to-br from-primary to-blue-700 shadow-primary/40' 
-                        : isDarkMode 
-                          ? 'bg-slate-900/40 backdrop-blur-xl border border-white/10 hover:bg-white/10'
-                          : 'bg-white/60 backdrop-blur-xl border border-black/5 hover:bg-black/5'
+                    disabled={isProcessing}
+                    className={`relative z-20 size-20 rounded-full flex items-center justify-center transition-all shadow-2xl ${
+                      isProcessing 
+                        ? 'bg-primary/50 cursor-not-allowed scale-95'
+                        : isListening 
+                          ? 'bg-gradient-to-br from-primary to-blue-700 shadow-primary/40 active:scale-90' 
+                          : isDarkMode 
+                            ? 'bg-slate-900/40 backdrop-blur-xl border border-white/10 hover:bg-white/10 active:scale-90'
+                            : 'bg-white/60 backdrop-blur-xl border border-black/5 hover:bg-black/5 active:scale-90'
                     }`}
                   >
-                    {isListening ? (
+                    {isProcessing ? (
+                      <Loader2 className="size-8 text-white animate-spin" />
+                    ) : isListening ? (
                       <MicOff className="size-8 text-white" />
                     ) : (
                       <Mic className="size-8 text-primary" />
@@ -668,8 +743,8 @@ export default function App() {
                           <Trash2 className="size-4" />
                         </button>
                       </div>
-                      <p className="text-xs text-slate-300 mb-1 font-light italic">"{note.originalText}"</p>
-                      <p className="text-sm font-medium text-white">{note.translatedText}</p>
+                      <p className={`text-xs ${isDarkMode ? 'text-slate-300' : 'text-slate-600'} mb-1 font-light italic`}>"{note.originalText}"</p>
+                      <p className={`text-sm font-medium ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{note.translatedText}</p>
                       <div className="mt-2 flex items-center justify-between text-[9px] text-slate-500 font-mono">
                         <span>{note.sourceLang} → {note.targetLang}</span>
                         <span>{new Date(note.timestamp).toLocaleDateString()}</span>
@@ -723,7 +798,7 @@ export default function App() {
                     Grid
                   }[cat.icon] || Grid;
 
-                  const isLarge = cat.id === 'Travel' || cat.id === 'Business' || cat.id === 'Greetings' || cat.id === 'General';
+                  const isLarge = cat.id === 'General' || cat.id === 'Dining' || cat.id === 'Emergency' || cat.id === 'Technical';
                   
                   return (
                     <div 
@@ -760,9 +835,18 @@ export default function App() {
                   <div 
                     key={cat.id}
                     onClick={() => handleCategoryClick(cat.id)}
-                    className="tile-1x1 glass p-3 flex flex-col justify-between glow-slate group cursor-pointer rounded-2xl"
+                    className="tile-1x1 glass p-3 flex flex-col justify-between glow-slate group cursor-pointer rounded-2xl relative"
                   >
-                    <Tag className="size-5 text-slate-400" />
+                    <div className="flex items-start justify-between">
+                      <Tag className="size-5 text-slate-400" />
+                      <button 
+                        onClick={(e) => handleDeleteCategory(cat.id, e)}
+                        className="p-1.5 rounded-full bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 active:scale-95 transition-all md:opacity-0 group-hover:opacity-100"
+                        title="Delete category"
+                      >
+                        <Trash2 className="size-3" />
+                      </button>
+                    </div>
                     <div>
                       <h3 className="text-xs font-bold tracking-tight">{cat.name}</h3>
                       <p className="text-[8px] text-slate-500 font-medium uppercase tracking-widest">{categoryCounts[cat.id] || 0} Records</p>
@@ -850,9 +934,6 @@ export default function App() {
                   <h3 className={`text-xl font-bold truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{user?.name || 'Guest User'}</h3>
                   <p className={`text-sm truncate ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{user?.email || 'guest@example.com'}</p>
                 </div>
-                <div className={`size-10 rounded-full flex items-center justify-center shrink-0 transition-colors ${isDarkMode ? 'bg-white/5 text-primary' : 'bg-black/5 text-primary'}`}>
-                  <ChevronRightIcon className="size-5" />
-                </div>
               </div>
 
               {/* Settings Groups */}
@@ -860,7 +941,7 @@ export default function App() {
                 <h4 className="text-[10px] font-bold uppercase tracking-widest text-slate-500 px-2">Preferences</h4>
                 
                 <div className="glass rounded-[32px] overflow-hidden">
-                  <div className="p-4 flex items-center justify-between border-b border-white/5">
+                  <div className="p-4 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="size-10 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center">
                         <Moon className="size-5" />
@@ -874,36 +955,6 @@ export default function App() {
                       <div className={`absolute top-1 size-4 rounded-full bg-white transition-all ${isDarkMode ? 'left-7' : 'left-1'}`} />
                     </button>
                   </div>
-
-                  <div className="p-4 flex items-center justify-between border-b border-white/5">
-                    <div className="flex items-center gap-3">
-                      <div className="size-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-                        <Volume2 className="size-5" />
-                      </div>
-                      <span className="font-medium">Voice Output</span>
-                    </div>
-                    <button 
-                      onClick={() => setIsVoiceEnabled(!isVoiceEnabled)}
-                      className={`w-12 h-6 rounded-full transition-colors relative ${isVoiceEnabled ? 'bg-primary' : 'bg-slate-700'}`}
-                    >
-                      <div className={`absolute top-1 size-4 rounded-full bg-white transition-all ${isVoiceEnabled ? 'left-7' : 'left-1'}`} />
-                    </button>
-                  </div>
-
-                  <div className="p-4 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="size-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
-                        <Bell className="size-5" />
-                      </div>
-                      <span className="font-medium">Notifications</span>
-                    </div>
-                    <button 
-                      onClick={() => setIsNotificationsEnabled(!isNotificationsEnabled)}
-                      className={`w-12 h-6 rounded-full transition-colors relative ${isNotificationsEnabled ? 'bg-primary' : 'bg-slate-700'}`}
-                    >
-                      <div className={`absolute top-1 size-4 rounded-full bg-white transition-all ${isNotificationsEnabled ? 'left-7' : 'left-1'}`} />
-                    </button>
-                  </div>
                 </div>
               </div>
 
@@ -914,39 +965,13 @@ export default function App() {
                   <button 
                     onClick={handleBackupToDrive}
                     disabled={isBackingUp}
-                    className="w-full p-4 flex items-center justify-between border-b border-white/5 hover:bg-white/5 transition-colors disabled:opacity-50"
+                    className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors disabled:opacity-50"
                   >
                     <div className="flex items-center gap-3">
                       <div className="size-10 rounded-xl bg-primary/20 text-primary flex items-center justify-center">
                         {isBackingUp ? <Loader2 className="size-5 animate-spin" /> : <Cloud className="size-5" />}
                       </div>
                       <span className="font-medium">Backup to Google Drive</span>
-                    </div>
-                    <ChevronRightIcon className="size-5 text-slate-600" />
-                  </button>
-
-                  <button 
-                    onClick={exportData}
-                    className="w-full p-4 flex items-center justify-between border-b border-white/5 hover:bg-white/5 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="size-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center">
-                        <Download className="size-5" />
-                      </div>
-                      <span className="font-medium">Export History</span>
-                    </div>
-                    <ChevronRightIcon className="size-5 text-slate-600" />
-                  </button>
-
-                  <button 
-                    onClick={clearAllData}
-                    className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="size-10 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center">
-                        <Database className="size-5" />
-                      </div>
-                      <span className="font-medium">Clear All Data</span>
                     </div>
                     <ChevronRightIcon className="size-5 text-slate-600" />
                   </button>
@@ -960,11 +985,6 @@ export default function App() {
                 <LogOut className="size-5" />
                 Sign Out
               </button>
-
-              <div className="text-center pb-20">
-                <p className="text-[10px] text-slate-600 uppercase tracking-widest font-bold">Voice to Notes v2.4.0</p>
-                <p className="text-[10px] text-slate-700 mt-1">Neural Engine: Gemini 3 Flash</p>
-              </div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -1057,6 +1077,25 @@ export default function App() {
         </button>
       )}
 
+      {/* Global Toast for Notifications */}
+      <AnimatePresence>
+        {showSavedToast && (
+          <div className="fixed inset-x-0 bottom-24 flex justify-center z-50 pointer-events-none">
+            <motion.div
+              initial={{ opacity: 0, y: 20, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 10, scale: 0.9 }}
+              className="glass p-3 rounded-full flex items-center gap-3 shadow-2xl border border-emerald-500/30 bg-emerald-500/10 backdrop-blur-xl"
+            >
+              <div className="size-6 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg">
+                <CheckCircle2 className="size-3.5" />
+              </div>
+              <span className="text-xs font-bold text-emerald-500 uppercase tracking-widest pr-2">Note Saved</span>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Auth Modal */}
       {/* Bottom Navigation */}
       <nav className={`border-t px-4 py-2 flex items-center justify-between z-50 shrink-0 transition-colors duration-300 ${isDarkMode ? 'bg-background-dark/95 backdrop-blur-xl border-white/5' : 'bg-background-light/95 backdrop-blur-xl border-black/5'}`}>
@@ -1065,9 +1104,9 @@ export default function App() {
           className={`flex flex-col items-center gap-1 transition-all duration-300 ${view === 'translate' ? 'text-primary scale-110' : isDarkMode ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-slate-600'}`}
         >
           <div className={`p-1.5 rounded-xl transition-colors ${view === 'translate' ? 'bg-primary/10' : 'bg-transparent'}`}>
-            <Languages className="size-5" />
+            <Mic className="size-5" />
           </div>
-          <span className="text-[8px] font-black uppercase tracking-[0.15em]">Translate</span>
+          <span className="text-[8px] font-black uppercase tracking-[0.15em]">Record</span>
         </button>
         
         <button 

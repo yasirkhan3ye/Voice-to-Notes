@@ -11,21 +11,16 @@ import {
   signInWithPhoneNumber,
   ConfirmationResult
 } from 'firebase/auth';
-import { getFirestore, collection, doc, setDoc, getDoc, getDocs, query, where, deleteDoc, onSnapshot, getDocFromServer } from 'firebase/firestore';
-// Initialize Firebase
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
-};
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, getDoc, getDocs, query, where, deleteDoc, onSnapshot, getDocFromServer } from 'firebase/firestore';
+import firebaseConfig from '../firebase-applet-config.json';
 
+// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app, import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID);
+export const db = initializeFirestore(app, {
+  databaseId: firebaseConfig.firestoreDatabaseId,
+  localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})
+});
 export const googleProvider = new GoogleAuthProvider();
 
 // Test connection
@@ -34,7 +29,7 @@ async function testConnection() {
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {
     if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error("Please check your Firebase configuration. The client is offline.");
+      console.warn("Firebase client is currently offline. Running in offline mode.");
     }
   }
 }

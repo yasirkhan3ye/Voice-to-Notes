@@ -1,10 +1,15 @@
 /// <reference types="vite/client" />
+/// <reference types="vite-plugin-pwa/client" />
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App';
 import './index.css';
 import { AuthProvider } from './contexts/AuthContext';
 import ErrorBoundary from './components/ErrorBoundary';
+import { registerSW } from 'virtual:pwa-register';
+
+// Register service worker for offline support
+registerSW({ immediate: true });
 
 // Suppress benign Vite WebSocket errors in the development environment
 if (import.meta.env.DEV) {

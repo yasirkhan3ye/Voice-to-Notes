@@ -25,14 +25,14 @@ export const SUPPORTED_LANGUAGES: Language[] = [
 ];
 
 export const DEFAULT_CATEGORIES = [
-  { id: 'Travel', name: 'Travel Essentials', icon: 'Plane', color: 'blue' },
-  { id: 'Business', name: 'Business', icon: 'Briefcase', color: 'purple' },
-  { id: 'Dining', name: 'Dining', icon: 'Utensils', color: 'amber' },
-  { id: 'Emergency', name: 'Emergency', icon: 'PlusSquare', color: 'rose' },
-  { id: 'Greetings', name: 'Greetings', icon: 'MessageSquare', color: 'emerald' },
-  { id: 'Shopping', name: 'Shopping', icon: 'ShoppingBag', color: 'pink' },
-  { id: 'Technical', name: 'Technical', icon: 'Cpu', color: 'blue' },
   { id: 'General', name: 'General', icon: 'Grid', color: 'slate' },
+  { id: 'Greetings', name: 'Greetings', icon: 'MessageSquare', color: 'emerald' },
+  { id: 'Travel', name: 'Travel Essentials', icon: 'Plane', color: 'blue' },
+  { id: 'Dining', name: 'Dining', icon: 'Utensils', color: 'amber' },
+  { id: 'Business', name: 'Business', icon: 'Briefcase', color: 'purple' },
+  { id: 'Shopping', name: 'Shopping', icon: 'ShoppingBag', color: 'pink' },
+  { id: 'Emergency', name: 'Emergency', icon: 'PlusSquare', color: 'rose' },
+  { id: 'Technical', name: 'Technical', icon: 'Cpu', color: 'indigo' },
 ];
 
 export const CATEGORY_COLORS: Record<string, string> = {
